@@ -232,19 +232,20 @@ trait HasRefiners
             $filters = $request->array($scope);
             $key = $alias ?? $property;
 
-            if (! array_key_exists($key, $filters)) {
+            if (filter_var(data_get($filters, "{$key}.disabled", default: false), \FILTER_VALIDATE_BOOLEAN)) {
+                return null;
+            }
+
+            if (array_intersect_key(data_get($filters, $key, []), array_flip(['value', 'operator', 'options', 'suggestion_key'])) === []) {
                 return $default === null
                     ? null
                     : new QueryFilter(
                         value: $default->value,
+                        search: data_get($filters, "{$key}.search"),
                         operator: $default->operator,
                         options: $default->options,
                         suggestionKey: $default->suggestionKey,
                     );
-            }
-
-            if (filter_var(data_get($filters, "{$key}.disabled", false), \FILTER_VALIDATE_BOOLEAN)) {
-                return null;
             }
 
             $value = data_get($filters, "{$key}.value");

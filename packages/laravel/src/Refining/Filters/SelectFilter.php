@@ -163,7 +163,7 @@ class SelectFilter extends BaseFilter
                 $this->evaluate($this->searchBuilderOptionsUsing, [
                     'builder' => $builder,
                     'query' => $builder,
-                    'search' => $this->filter?->search,
+                    'search' => $this->searchQuery,
                 ]);
             }
 
@@ -409,7 +409,7 @@ class SelectFilter extends BaseFilter
 
     protected function resolveSelectedOptions(): array
     {
-        return $this->parseQueryValue($this->filter->value);
+        return $this->parseQueryValue($this->filter?->value);
     }
 
     public function resolveBuilderOptionFromKeyUsing(Closure $callback): self
@@ -582,7 +582,7 @@ class SelectFilter extends BaseFilter
                 ->limit(10)
                 ->where(function (Builder $builder) use ($columns) {
                     foreach ($columns as $column) {
-                        $builder->orWhereLike($column, "%{$this->filter->search}%");
+                        $builder->orWhereLike($column, "%{$this->searchQuery}%");
                     }
                 });
         }
@@ -664,7 +664,7 @@ class SelectFilter extends BaseFilter
      */
     public function isSearching(): bool
     {
-        return $this->filter?->search ? true : false;
+        return $this->searchQuery !== null && $this->searchQuery !== '';
     }
 
     /**

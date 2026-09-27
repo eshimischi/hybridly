@@ -1,5 +1,8 @@
 import { router } from '@hybridly/core'
-import { beforeEach, test, vi } from 'vitest'
+import { HttpResponse } from 'msw'
+import { beforeEach, expect, test, vi } from 'vitest'
+import { ref } from 'vue'
+import { http, server } from '../../core/test/server'
 import { fakePayload, fakeRouterContext } from '../../core/test/utils'
 import type { FilterRefinement, Refinements, SortRefinement } from '../src'
 import { useRefinements } from '../src'
@@ -56,12 +59,65 @@ function makeRefinements(overrides: Partial<Refinements> = {}): Refinements {
 
 beforeEach(async () => {
 	vi.restoreAllMocks()
+	server.resetHandlers()
 
 	await fakeRouterContext({
 		payload: fakePayload({
 			url: 'https://bluebird.test/users?view=important',
 		}),
 	})
+})
+
+test.each([
+	['selection', 'filters[status][value]=paid&filters[status][operator]=not_equals'],
+	['cleared baseline', 'filters[status][disabled]=true'],
+	['empty relationship', 'filters[status][options][empty]=true'],
+	['implicit baseline', ''],
+])('searching preserves query state for %s', async (_name, query) => {
+	const requests: URL[] = []
+	await fakeRouterContext({
+		payload: fakePayload({ url: `https://bluebird.test/users?view=important&${query}` }),
+		adapter: { executeOnMounted: (callback) => callback() },
+	})
+	server.use(http.get('https://bluebird.test/users', ({ request }) => {
+		requests.push(new URL(request.url))
+		return HttpResponse.json(fakePayload({ url: request.url }), { headers: { 'x-hybrid': 'true' } })
+	}))
+	const refinements = useRefinements(makeRefinements())
+
+	await refinements.getFilter('status')!.search('test')
+	await refinements.getFilter('status')!.search('')
+
+	expect(requests).toHaveLength(2)
+	expect(requests[0].searchParams.get('filters[status][search]')).toBe('test')
+	expect(requests[1].searchParams.has('filters[status][search]')).toBe(false)
+	for (const request of requests) {
+		expect(request.searchParams.get('view')).toBe('important')
+		for (const [key, value] of new URLSearchParams(query)) {
+			expect(request.searchParams.get(key)).toBe(value)
+		}
+	}
+})
+
+test('option searches do not change active filters or captured view state', ({ expect }) => {
+	const state = ref(makeRefinements({
+		filters: [makeFilter({ type: 'select', is_active: false, value: undefined, default: undefined, has_default: false })],
+		sorts: [],
+	}))
+	const refinements = useRefinements(state)
+
+	state.value.filters[0].search_query = 'test'
+	expect(refinements.currentFilters()).toEqual([])
+	expect(refinements.isFiltering()).toBe(false)
+	expect(refinements.captureState()).toEqual({ filters: {}, sorts: [] })
+	expect(refinements.isModified()).toBe(false)
+
+	state.value.filters = [makeFilter({ type: 'select' })]
+	const baseline = refinements.captureState()
+	state.value.filters[0].search_query = 'test'
+	expect(refinements.captureState()).toEqual(baseline)
+	expect(refinements.isModified()).toBe(false)
+	expect(refinements.isFiltering('status')).toBe(true)
 })
 
 test('applying a filter equal to its effective baseline removes the override', async ({ expect }) => {

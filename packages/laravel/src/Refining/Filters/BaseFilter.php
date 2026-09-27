@@ -27,6 +27,7 @@ abstract class BaseFilter extends Components\Component implements Refiner, Filte
     use Refining\Concerns\HasRefineInstance;
 
     protected ?Refining\Filters\QueryFilter $filter = null;
+    protected ?string $searchQuery = null;
     protected ?FilterState $effectiveDefault = null;
     protected bool $hasResolvedState = false;
     protected bool $isCleared = false;
@@ -49,6 +50,10 @@ abstract class BaseFilter extends Components\Component implements Refiner, Filte
     {
         $this->setRefineInstance($refine);
 
+        $this->searchQuery = data_get(
+            $refine->getRequest()->array($refine->formatScope($refine->getFiltersKey())),
+            ($this->alias ?? $this->property) . '.search',
+        );
         $this->filter = $this->resolveFilter($refine);
 
         if (\is_null($this->filter)) {
@@ -96,7 +101,7 @@ abstract class BaseFilter extends Components\Component implements Refiner, Filte
             'metadata' => $this->getMetadata(),
             'is_active' => $this->isActive(),
             'value' => $this->getValue(),
-            'search_query' => $this->filter?->search,
+            'search_query' => $this->searchQuery,
             'operator' => $this->resolveOperator()?->value,
             'default_operator' => $default?->operator->value ?? $this->getDefaultOperator(),
             'supported_operators' => $this->getSupportedOperators(),
@@ -252,7 +257,7 @@ abstract class BaseFilter extends Components\Component implements Refiner, Filte
         return match ($parameterName) {
             'filter' => [$this->filter],
             'value' => [$this->filter?->value],
-            'search' => [$this->filter?->search],
+            'search' => [$this->searchQuery],
             'property' => [$this->property],
             'alias' => [$this->alias],
             'parentBuilder' => [$this->parentBuilder],

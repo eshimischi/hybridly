@@ -439,6 +439,30 @@ it('includes allows_empty_relationship_option metadata when enabled', function (
         ->toHaveCount(2); // Only actual authors, no empty option
 });
 
+it('preserves empty relationship selections while searching', function (): void {
+    $author = AuthorFactory::new()->create(['name' => 'George Orwell']);
+    BookFactory::new()->create(['title' => '1984', 'author_id' => $author->id]);
+    $unattributed = BookFactory::new()->create(['title' => 'Unknown book', 'author_id' => null]);
+    $filter = SelectFilter::make('author')->relationship('author', 'name', hasEmptyOption: true);
+
+    $refiner = mock_refiner(
+        query: ['filters' => ['author' => ['search' => 'George', 'options' => ['empty' => true]]]],
+        refiners: [$filter],
+        classOrQuery: Book::class,
+        apply: true,
+    );
+
+    expect($refiner->pluck('id')->all())->toBe([$unattributed->id]);
+    expect($filter->jsonSerialize())->toMatchArray([
+        'is_active' => true,
+        'is_overridden' => true,
+        'value' => null,
+        'options' => ['empty' => true],
+        'search_query' => 'George',
+    ]);
+    expect($filter->jsonSerialize()['metadata']['options'])->toHaveKey($author->id, 'George Orwell');
+});
+
 it('can filter with empty option combined with actual authors in multiple mode', function () {
     $author1 = AuthorFactory::new()->create(['name' => 'George Orwell']);
     $author2 = AuthorFactory::new()->create(['name' => 'Jane Austen']);

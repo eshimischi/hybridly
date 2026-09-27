@@ -1,10 +1,90 @@
 <?php
 
 use Hybridly\Refining\Filters\BaseFilter;
+use Hybridly\Refining\Filters\Operator;
 use Hybridly\Refining\Filters\SelectFilter;
+use Hybridly\Refining\FilterState;
+use Hybridly\Refining\RefinementState;
 use Hybridly\Tests\Fixtures\Database\Product;
 use Hybridly\Tests\Fixtures\Database\ProductFactory;
 use Hybridly\Tests\Fixtures\Vendor;
+
+it('searches options without activating a filter', function (string $search, array $labels): void {
+    ProductFactory::new()->create(['name' => 'AirPods']);
+    ProductFactory::new()->create(['name' => 'MacBook']);
+
+    $refiner = mock_refiner(
+        query: ['filters' => ['product' => ['search' => $search]]],
+        refiners: [SelectFilter::make('id', alias: 'product')
+            ->options(Product::class)
+            ->searchable('name')
+            ->metadata(fn (string $search): array => ['injected_search' => $search])],
+        apply: true,
+    );
+
+    expect($refiner->count())->toBe(2);
+    expect($refiner->getFilters()[0]->jsonSerialize())->toMatchArray([
+        'is_active' => false,
+        'is_overridden' => false,
+        'value' => null,
+        'search_query' => $search,
+    ]);
+    expect(array_values(data_get($refiner->getFilters()[0]->jsonSerialize(), key: 'metadata.options', default: [])))->toBe($labels);
+    expect(data_get($refiner->getFilters()[0]->jsonSerialize(), key: 'metadata.injected_search'))->toBe($search);
+})->with([
+    'matching options' => ['Air', ['AirPods']],
+    'no matching options' => ['test', []],
+    'zero is a search term' => ['0', []],
+    'cleared search' => ['', []],
+]);
+
+it('preserves effective selections while searching options', function (string $state): void {
+    $selected = ProductFactory::new()->create(['name' => 'AirPods']);
+    $other = ProductFactory::new()->create(['name' => 'MacBook']);
+    $filter = SelectFilter::make('id')->options(Product::class)->searchable('name')->multiple();
+    $input = ['search' => 'Mac'];
+
+    if ($state === 'declared' || $state === 'disabled') {
+        $filter->default([$selected->id]);
+    }
+
+    if ($state === 'explicit') {
+        $input['value'] = [$selected->id];
+        $input['operator'] = 'not_in';
+        $input['options'] = ['custom' => true];
+        $input['suggestion_key'] = 'saved';
+    }
+
+    if ($state === 'disabled') {
+        $input['disabled'] = true;
+    }
+
+    $refiner = mock_refiner(query: ['filters' => ['id' => $input]], refiners: [$filter]);
+
+    if ($state === 'baseline') {
+        $refiner->withBaseline(new RefinementState(filters: [
+            'id' => new FilterState(value: [$selected->id], operator: Operator::IN, options: ['custom' => true], suggestionKey: 'saved'),
+        ]));
+    }
+
+    $refiner->applyRefiners();
+
+    expect($refiner->pluck('id')->all())->toBe(match ($state) {
+        'disabled' => [$selected->id, $other->id],
+        'explicit' => [$other->id],
+        default => [$selected->id],
+    });
+    expect($filter->jsonSerialize())->toMatchArray([
+        'is_active' => $state !== 'disabled',
+        'is_overridden' => in_array($state, ['explicit', 'disabled'], strict: true),
+        'is_cleared' => $state === 'disabled',
+        'value' => $state === 'disabled' ? null : [$selected->id],
+        'search_query' => 'Mac',
+        'options' => in_array($state, ['explicit', 'baseline'], strict: true) ? ['custom' => true] : [],
+        'suggestion_key' => in_array($state, ['explicit', 'baseline'], strict: true) ? 'saved' : null,
+    ]);
+    expect($filter->jsonSerialize()['metadata']['options'])->toHaveKey($other->id, 'MacBook');
+})->with(['declared', 'baseline', 'explicit', 'disabled']);
 
 it('can be serialized with enum options', function () {
     $filter = SelectFilter::make('vendor')

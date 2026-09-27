@@ -439,6 +439,7 @@ test('a redirect to the base view may be forced', function () {
                 'baseUrl' => 'http://localhost',
                 'redirectUrl' => 'http://localhost',
                 'key' => data_get($payload, 'dialog.key'),
+                'replace' => false,
             ],
             'url' => 'http://localhost/users/makise',
             'version' => null,

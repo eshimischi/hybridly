@@ -43,6 +43,43 @@ test('filters can have a default value', function () {
         ->toBe(1);
 });
 
+test('search-only requests do not invoke filter callbacks', function (): void {
+    $called = false;
+    $refiner = mock_refiner(
+        query: ['filters' => ['name' => ['search' => 'Air']]],
+        refiners: [CallbackFilter::make('name', function () use (&$called): void {
+            $called = true;
+        })],
+        apply: true,
+    );
+
+    expect($called)->toBeFalse();
+    expect($refiner->count())->toBe(3);
+    expect($refiner->getFilters()[0]->jsonSerialize())->toMatchArray([
+        'is_active' => false,
+        'is_overridden' => false,
+        'search_query' => 'Air',
+    ]);
+});
+
+test('search preserves explicit falsy values', function (mixed $value): void {
+    $called = false;
+    $refiner = mock_refiner(
+        query: ['filters' => ['name' => ['value' => $value, 'search' => 'Air']]],
+        refiners: [CallbackFilter::make('name', function (mixed $value) use (&$called): void {
+            $called = true;
+        })],
+        apply: true,
+    );
+
+    expect($called)->toBeTrue();
+    expect($refiner->getFilters()[0]->jsonSerialize())->toMatchArray([
+        'is_active' => true,
+        'is_overridden' => true,
+        'value' => $value,
+    ]);
+})->with([null, false, 0, '']);
+
 test('filters serialize non-null defaults as explicitly configured', function () {
     expect(CallbackFilter::make('name', $this->filter)->default('AirPods Pro')->jsonSerialize())
         ->toMatchArray([
